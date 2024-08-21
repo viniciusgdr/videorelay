@@ -1,0 +1,5 @@
+{
+  "dependencies": {
+    "mdns-js": "^1.0.3"
+  }
+}
