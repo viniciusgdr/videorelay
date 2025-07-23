@@ -1,16 +1,19 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_webrtc/flutter_webrtc.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
-import 'package:streameasy/screens/settings.dart';
-import 'package:streameasy/src/hooks/websocket_server.dart';
+import 'src/hooks/websocket_server.dart';
+import 'screens/camera_viewer_screen.dart';
 
-void main() {
-  runApp(
-    ChangeNotifierProvider(
-      create: (_) => WebSocketServerManager(),
-      child: const MyApp(),
-    ),
-  );
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  
+  // Forçar orientação paisagem apenas no servidor
+  await SystemChrome.setPreferredOrientations([
+    DeviceOrientation.landscapeLeft,
+    DeviceOrientation.landscapeRight,
+  ]);
+  
+  runApp(const MyApp());
 }
 
 class MyApp extends StatelessWidget {
@@ -18,85 +21,377 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Flutter WebSocket Server',
-      debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
-        useMaterial3: true,
+    return MultiProvider(
+      providers: [
+        ChangeNotifierProvider(create: (context) => ServerState()),
+        ChangeNotifierProxyProvider<ServerState, WebSocketServerManager>(
+          create: (context) => WebSocketServerManager(),
+          update: (context, serverState, manager) => serverState.serverManager,
+        ),
+      ],
+      child: MaterialApp(
+        title: 'StreamEasy Server',
+        theme: ThemeData(
+          primarySwatch: Colors.blue,
+          brightness: Brightness.dark,
+          scaffoldBackgroundColor: Colors.grey[900],
+          appBarTheme: const AppBarTheme(
+            backgroundColor: Colors.black87,
+            elevation: 0,
+          ),
+        ),
+        home: const ServerHomePage(),
+        debugShowCheckedModeBanner: false,
       ),
-      darkTheme: ThemeData.dark(),
-      themeMode: ThemeMode.dark,
-      home: const WebRTCServer(),
-      routes: {
-        '/settings': (context) => const SettingsScreen(),
+    );
+  }
+}
+
+class ServerState extends ChangeNotifier {
+  final WebSocketServerManager _serverManager = WebSocketServerManager();
+  bool _isServerRunning = false;
+  String _serverStatus = 'Parado';
+  List<CameraConnection> _cameras = [];
+
+  bool get isServerRunning => _isServerRunning;
+  String get serverStatus => _serverStatus;
+  List<CameraConnection> get cameras => _cameras;
+  int get connectedCameras => _cameras.length;
+  WebSocketServerManager get serverManager =>
+      _serverManager; // Adicionar getter
+
+  ServerState() {
+    _initializeServer();
+  }
+
+  void _initializeServer() {
+    _serverManager.onCameraConnected = (camera) {
+      _cameras.add(camera);
+      notifyListeners();
+    };
+
+    _serverManager.onCameraDisconnected = (deviceId) {
+      _cameras.removeWhere((camera) => camera.deviceId == deviceId);
+      notifyListeners();
+    };
+
+    _serverManager.onCameraUpdated = (updatedCamera) {
+      final index = _cameras
+          .indexWhere((camera) => camera.deviceId == updatedCamera.deviceId);
+      if (index != -1) {
+        _cameras[index] = updatedCamera;
+        notifyListeners();
+      }
+    };
+  }
+
+  Future<void> startServer() async {
+    try {
+      await _serverManager.startServer();
+      _isServerRunning = true;
+      _serverStatus = 'Rodando na porta 8080';
+      notifyListeners();
+    } catch (e) {
+      _serverStatus = 'Erro: $e';
+      notifyListeners();
+    }
+  }
+
+  Future<void> stopServer() async {
+    try {
+      await _serverManager.stopServer();
+      _isServerRunning = false;
+      _serverStatus = 'Parado';
+      _cameras.clear();
+      notifyListeners();
+    } catch (e) {
+      _serverStatus = 'Erro ao parar: $e';
+      notifyListeners();
+    }
+  }
+
+  CameraConnection? getCameraById(String deviceId) {
+    try {
+      return _cameras.firstWhere((camera) => camera.deviceId == deviceId);
+    } catch (e) {
+      return null;
+    }
+  }
+}
+
+class ServerHomePage extends StatelessWidget {
+  const ServerHomePage({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Consumer<ServerState>(
+      builder: (context, serverState, child) {
+        return Scaffold(
+          appBar: AppBar(
+            title: const Row(
+              children: [
+                Icon(Icons.computer, color: Colors.blue),
+                SizedBox(width: 8),
+                Text('StreamEasy Server'),
+              ],
+            ),
+            actions: [
+              // Status do servidor
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                margin: const EdgeInsets.only(right: 8),
+                decoration: BoxDecoration(
+                  color:
+                      serverState.isServerRunning ? Colors.green : Colors.red,
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      serverState.isServerRunning
+                          ? Icons.play_circle
+                          : Icons.stop_circle,
+                      size: 16,
+                      color: Colors.white,
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      serverState.serverStatus,
+                      style: const TextStyle(color: Colors.white, fontSize: 12),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          body: Column(
+            children: [
+              // Painel de controle
+              Container(
+                padding: const EdgeInsets.all(16),
+                margin: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.grey[800],
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Controle do Servidor',
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            '${serverState.connectedCameras} câmeras conectadas',
+                            style: const TextStyle(color: Colors.white70),
+                          ),
+                        ],
+                      ),
+                    ),
+                    ElevatedButton.icon(
+                      onPressed: serverState.isServerRunning
+                          ? serverState.stopServer
+                          : serverState.startServer,
+                      icon: Icon(
+                        serverState.isServerRunning
+                            ? Icons.stop
+                            : Icons.play_arrow,
+                      ),
+                      label: Text(
+                        serverState.isServerRunning ? 'Parar' : 'Iniciar',
+                      ),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: serverState.isServerRunning
+                            ? Colors.red
+                            : Colors.green,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              // Lista de câmeras
+              Expanded(
+                child: serverState.cameras.isEmpty
+                    ? Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              Icons.videocam_off,
+                              size: 64,
+                              color: Colors.grey[600],
+                            ),
+                            const SizedBox(height: 16),
+                            Text(
+                              serverState.isServerRunning
+                                  ? 'Aguardando conexões de câmeras...'
+                                  : 'Inicie o servidor para receber conexões',
+                              style: TextStyle(
+                                fontSize: 16,
+                                color: Colors.grey[600],
+                              ),
+                            ),
+                          ],
+                        ),
+                      )
+                    : ListView.builder(
+                        padding: const EdgeInsets.all(16),
+                        itemCount: serverState.cameras.length,
+                        itemBuilder: (context, index) {
+                          final camera = serverState.cameras[index];
+                          return CameraCard(camera: camera);
+                        },
+                      ),
+              ),
+            ],
+          ),
+          floatingActionButton: serverState.cameras.isNotEmpty
+              ? FloatingActionButton.extended(
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => const CameraViewerScreen(),
+                      ),
+                    );
+                  },
+                  backgroundColor: Colors.blue,
+                  icon: const Icon(Icons.fullscreen),
+                  label: const Text('Visualizar'),
+                )
+              : null,
+        );
       },
     );
   }
 }
 
-class WebRTCServer extends StatelessWidget {
-  const WebRTCServer({super.key});
+class CameraCard extends StatelessWidget {
+  final CameraConnection camera;
+
+  const CameraCard({super.key, required this.camera});
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('VideoRelay Server'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.settings),
-            onPressed: () {
-              Navigator.pushNamed(context, '/settings');
-            },
+    return Card(
+      margin: const EdgeInsets.only(bottom: 12),
+      color: Colors.grey[800],
+      child: InkWell(
+        onTap: () => _openCameraWindow(context),
+        borderRadius: BorderRadius.circular(8),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Row(
+            children: [
+              // Ícone da câmera
+              Container(
+                width: 60,
+                height: 60,
+                decoration: BoxDecoration(
+                  color: Colors.blue.withOpacity(0.2),
+                  borderRadius: BorderRadius.circular(30),
+                ),
+                child: const Icon(
+                  Icons.videocam,
+                  color: Colors.blue,
+                  size: 30,
+                ),
+              ),
+              const SizedBox(width: 16),
+
+              // Informações da câmera
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      camera.deviceName,
+                      style: const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'ID: ${camera.deviceId}',
+                      style: const TextStyle(
+                        color: Colors.white70,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              // Indicador de bateria
+              _buildBatteryIndicator(),
+              const SizedBox(width: 16),
+
+              // Status da janela
+            ],
           ),
-          Consumer<WebSocketServerManager>(
-            builder: (context, manager, child) {
-              return IconButton(
-                icon: Icon(manager.audioEnabled ? Icons.mic_off : Icons.mic),
-                onPressed: () {
-                  manager.muteAudio = !manager.audioEnabled;
-                },
-              );
-            },
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBatteryIndicator() {
+    Color batteryColor;
+    IconData batteryIcon;
+
+    if (camera.isCharging) {
+      batteryColor = Colors.green;
+      batteryIcon = Icons.battery_charging_full;
+    } else if (camera.batteryLevel > 50) {
+      batteryColor = Colors.green;
+      batteryIcon = Icons.battery_full;
+    } else if (camera.batteryLevel > 20) {
+      batteryColor = Colors.orange;
+      batteryIcon = Icons.battery_3_bar;
+    } else {
+      batteryColor = Colors.red;
+      batteryIcon = Icons.battery_1_bar;
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: batteryColor.withOpacity(0.2),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(batteryIcon, color: batteryColor, size: 16),
+          const SizedBox(width: 4),
+          Text(
+            '${camera.batteryLevel}%',
+            style: TextStyle(color: batteryColor, fontSize: 12),
           ),
         ],
       ),
-      body: Consumer<WebSocketServerManager>(
-        builder: (context, manager, child) {
-          return Column(
-            children: [
-              SizedBox(
-                height: 50,
-                child: ListView.builder(
-                  scrollDirection: Axis.horizontal,
-                  itemCount: manager.remoteRenderers.length,
-                  itemBuilder: (context, index) {
-                    return GestureDetector(
-                      onTap: () {
-                        manager.selectedCameraIndex = index;
-                      },
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 16.0),
-                        alignment: Alignment.center,
-                        color: index == manager.selectedCameraIndex
-                            ? Colors.blueAccent
-                            : Colors.grey,
-                        child: Text('Camera ${index + 1}'),
-                      ),
-                    );
-                  },
-                ),
-              ),
-              Expanded(
-                child: manager.remoteRenderers.isNotEmpty
-                    ? RTCVideoView(
-                        manager.remoteRenderers[manager.selectedCameraIndex])
-                    : const Center(child: Text('No camera selected')),
-              ),
-            ],
-          );
-        },
+    );
+  }
+
+  void _openCameraWindow(BuildContext context) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => CameraViewerScreen(
+          initialCameraId: camera.deviceId,
+        ),
       ),
     );
   }

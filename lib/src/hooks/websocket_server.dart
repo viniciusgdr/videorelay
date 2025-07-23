@@ -1,30 +1,73 @@
-
-
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:streameasy/src/components/webrtc_to_virtual_cam.dart';
+
+class CameraConnection {
+  final String id;
+  final RTCPeerConnection peerConnection;
+  final RTCVideoRenderer renderer;
+  final WebSocket webSocket;
+  String deviceName;
+  String deviceModel;
+  int batteryLevel;
+  String batteryStatus;
+  DateTime lastSeen;
+  bool isConnected;
+
+  CameraConnection({
+    required this.id,
+    required this.peerConnection,
+    required this.renderer,
+    required this.webSocket,
+    this.deviceName = 'Dispositivo Desconhecido',
+    this.deviceModel = 'Modelo Desconhecido',
+    this.batteryLevel = 0,
+    this.batteryStatus = 'Desconhecido',
+    required this.lastSeen,
+    this.isConnected = true,
+  });
+
+  // Properties para compatibilidade
+  String get deviceId => id;
+  bool get isCharging => batteryStatus.toLowerCase().contains('charging');
+
+  // Método para verificar se há stream de vídeo ativo
+  bool get hasVideoStream => renderer.srcObject != null;
+
+  MediaStream? get videoStream => renderer.srcObject;
+}
 
 class WebSocketServerManager extends ChangeNotifier {
   HttpServer? _server;
-  List<RTCPeerConnection> peerConnections = [];
-  List<RTCVideoRenderer> remoteRenderers = [];
-  List<WebRTCtoVirtualCam> virtualCams = [];
+  final Map<String, CameraConnection> _connections = {};
   int _port = 8080; // Porta padrão
-  int _selectedCameraIndex = 0;
+  String? _selectedCameraId;
   bool _audioEnabled = false;
+
+  // Callbacks para integração com a nova UI
+  Function(CameraConnection)? onCameraConnected;
+  Function(String)? onCameraDisconnected;
+  Function(CameraConnection)? onCameraUpdated;
 
   WebSocketServerManager() {
     _loadPort();
   }
 
   int get port => _port;
-  int get selectedCameraIndex => _selectedCameraIndex;
+  Map<String, CameraConnection> get connections => _connections;
+  String? get selectedCameraId => _selectedCameraId;
   bool get audioEnabled => _audioEnabled;
-  
+
+  List<RTCVideoRenderer> get remoteRenderers =>
+      _connections.values.map((c) => c.renderer).toList();
+
+  List<RTCPeerConnection> get peerConnections =>
+      _connections.values.map((c) => c.peerConnection).toList();
+
   set muteAudio(bool mute) {
     _audioEnabled = mute;
     _setAudioEnabled(mute);
@@ -44,9 +87,18 @@ class WebSocketServerManager extends ChangeNotifier {
     await _restartServer();
   }
 
-  set selectedCameraIndex(int index) {
-    _selectedCameraIndex = index;
-    notifyListeners();
+  void selectCamera(String cameraId) {
+    if (_connections.containsKey(cameraId)) {
+      _selectedCameraId = cameraId;
+      notifyListeners();
+    }
+  }
+
+  CameraConnection? getSelectedCamera() {
+    if (_selectedCameraId != null) {
+      return _connections[_selectedCameraId];
+    }
+    return null;
   }
 
   Future<void> _loadPort() async {
@@ -78,6 +130,11 @@ class WebSocketServerManager extends ChangeNotifier {
     notifyListeners();
   }
 
+  // Método para iniciar servidor (compatibilidade)
+  Future<void> startServer() async {
+    await _startServer();
+  }
+
   Future<void> stopServer() async {
     if (_server != null) {
       await _server?.close(force: true);
@@ -92,15 +149,54 @@ class WebSocketServerManager extends ChangeNotifier {
 
   void _handleWebSocket(WebSocket ws) async {
     print('WebSocket connection established');
+    final connectionId = DateTime.now().millisecondsSinceEpoch.toString();
+
     RTCVideoRenderer remoteRenderer = RTCVideoRenderer();
     await remoteRenderer.initialize();
 
     RTCPeerConnection peerConnection =
-        await _initializePeerConnection(ws, remoteRenderer);
+        await _initializePeerConnection(ws, remoteRenderer, connectionId);
+
+    // Criar nova conexão de câmera
+    final cameraConnection = CameraConnection(
+      id: connectionId,
+      peerConnection: peerConnection,
+      renderer: remoteRenderer,
+      webSocket: ws,
+      lastSeen: DateTime.now(),
+    );
+
+    _connections[connectionId] = cameraConnection;
+
+    // Se é a primeira câmera, selecioná-la automaticamente
+    _selectedCameraId ??= connectionId;
+
+    // Notificar callback
+    onCameraConnected?.call(cameraConnection);
 
     ws.listen((message) async {
       print('Received message: $message');
       var data = jsonDecode(message);
+
+      // Atualizar informações da câmera
+      cameraConnection.lastSeen = DateTime.now();
+
+      if (data['deviceInfo'] != null) {
+        cameraConnection.deviceName =
+            data['deviceInfo']['name'] ?? 'Dispositivo Desconhecido';
+        cameraConnection.deviceModel =
+            data['deviceInfo']['model'] ?? 'Modelo Desconhecido';
+        onCameraUpdated?.call(cameraConnection);
+        notifyListeners();
+      }
+
+      if (data['battery'] != null) {
+        cameraConnection.batteryLevel = data['battery']['level'] ?? 0;
+        cameraConnection.batteryStatus =
+            data['battery']['status'] ?? 'Desconhecido';
+        onCameraUpdated?.call(cameraConnection);
+        notifyListeners();
+      }
 
       if (data['sdp'] != null) {
         await peerConnection.setRemoteDescription(
@@ -118,20 +214,18 @@ class WebSocketServerManager extends ChangeNotifier {
         notifyListeners();
       }
     }, onDone: () {
-      _removeConnection(peerConnection, remoteRenderer);
+      print('WebSocket connection closed for $connectionId');
+      _removeConnection(connectionId);
     }, onError: (error) {
-      print('WebSocket error: $error');
-      _removeConnection(peerConnection, remoteRenderer);
+      print('WebSocket error for $connectionId: $error');
+      _removeConnection(connectionId);
     });
-
-    peerConnections.add(peerConnection);
-    remoteRenderers.add(remoteRenderer);
 
     notifyListeners();
   }
 
-  Future<RTCPeerConnection> _initializePeerConnection(
-      WebSocket ws, RTCVideoRenderer remoteRenderer) async {
+  Future<RTCPeerConnection> _initializePeerConnection(WebSocket ws,
+      RTCVideoRenderer remoteRenderer, String connectionId) async {
     RTCPeerConnection peerConnection = await createPeerConnection({
       'iceServers': [
         {
@@ -140,50 +234,87 @@ class WebSocketServerManager extends ChangeNotifier {
       ],
     });
 
-    print('Peer connection initialized');
+    print('Peer connection initialized for $connectionId');
     peerConnection.onIceCandidate = (RTCIceCandidate candidate) {
       ws.add(jsonEncode({'candidate': candidate.toMap()}));
     };
 
     peerConnection.onTrack = (RTCTrackEvent event) {
-      print('Received remote track: ${event.track.kind}');
+      print('Received remote track: ${event.track.kind} for $connectionId');
       if (event.track.kind == 'video') {
         remoteRenderer.srcObject = event.streams[0];
+        // Notificar que o stream foi atualizado
+        final connection = _connections[connectionId];
+        if (connection != null) {
+          onCameraUpdated?.call(connection);
+          notifyListeners();
+        }
       }
     };
 
     peerConnection.onConnectionState = (RTCPeerConnectionState state) {
-      print('Connection state: $state');
-      if (state == RTCPeerConnectionState.RTCPeerConnectionStateFailed ||
-          state == RTCPeerConnectionState.RTCPeerConnectionStateDisconnected ||
-          state == RTCPeerConnectionState.RTCPeerConnectionStateClosed) {
-        _removeConnection(peerConnection, remoteRenderer);
+      print('Connection state for $connectionId: $state');
+      final connection = _connections[connectionId];
+      if (connection != null) {
+        connection.isConnected =
+            state == RTCPeerConnectionState.RTCPeerConnectionStateConnected;
+
+        // Só remove se realmente falhou ou foi fechado pelo usuário
+        if (state == RTCPeerConnectionState.RTCPeerConnectionStateFailed ||
+            state == RTCPeerConnectionState.RTCPeerConnectionStateClosed) {
+          // Aguardar um pouco antes de remover para permitir reconexões
+          Timer(const Duration(seconds: 5), () {
+            final currentConnection = _connections[connectionId];
+            if (currentConnection != null &&
+                !currentConnection.isConnected &&
+                (currentConnection.peerConnection.connectionState ==
+                        RTCPeerConnectionState.RTCPeerConnectionStateFailed ||
+                    currentConnection.peerConnection.connectionState ==
+                        RTCPeerConnectionState.RTCPeerConnectionStateClosed)) {
+              _removeConnection(connectionId);
+            }
+          });
+        }
+
+        notifyListeners();
       }
     };
 
     return peerConnection;
   }
 
-  void _removeConnection(
-      RTCPeerConnection peerConnection, RTCVideoRenderer remoteRenderer) {
-    peerConnection.dispose();
-    remoteRenderer.dispose();
+  void _removeConnection(String connectionId) {
+    final connection = _connections[connectionId];
+    if (connection != null) {
+      connection.peerConnection.dispose();
+      connection.renderer.dispose();
+      connection.webSocket.close();
 
-    peerConnections.remove(peerConnection);
-    remoteRenderers.remove(remoteRenderer);
+      _connections.remove(connectionId);
 
-    notifyListeners(); // Notificar listeners quando uma conexão é removida
+      // Se a câmera removida era a selecionada, selecionar outra
+      if (_selectedCameraId == connectionId) {
+        _selectedCameraId =
+            _connections.keys.isNotEmpty ? _connections.keys.first : null;
+      }
+
+      // Notificar callback
+      onCameraDisconnected?.call(connectionId);
+
+      print('Connection $connectionId removed');
+      notifyListeners();
+    }
   }
 
   @override
   void dispose() {
     stopServer();
-    for (var pc in peerConnections) {
-      pc.dispose();
+    for (var connection in _connections.values) {
+      connection.peerConnection.dispose();
+      connection.renderer.dispose();
+      connection.webSocket.close();
     }
-    for (var renderer in remoteRenderers) {
-      renderer.dispose();
-    }
+    _connections.clear();
     super.dispose();
   }
 }
