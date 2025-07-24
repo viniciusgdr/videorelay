@@ -171,12 +171,13 @@ class _CameraStreamingPageState extends State<CameraStreamingPage> {
   RTCPeerConnection? _peerConnection;
   WebSocketChannel? _channel;
   final RTCVideoRenderer _localRenderer = RTCVideoRenderer();
-  
+
   StreamingConfig _config = const StreamingConfig();
   BatteryMonitor? _batteryMonitor;
-  
+
   bool _isStreaming = false;
   bool _isConnecting = false;
+  bool _isCameraVisible = true;
   String _connectionStatus = 'Desconectado';
   String _errorMessage = '';
   List<MediaDeviceInfo> _availableCameras = [];
@@ -187,7 +188,6 @@ class _CameraStreamingPageState extends State<CameraStreamingPage> {
   @override
   void initState() {
     super.initState();
-    // Garantir orientação paisagem
     SystemChrome.setPreferredOrientations([
       DeviceOrientation.landscapeLeft,
       DeviceOrientation.landscapeRight,
@@ -237,15 +237,11 @@ class _CameraStreamingPageState extends State<CameraStreamingPage> {
       if (_availableCameras.isEmpty) {
         throw Exception('Nenhuma câmera disponível');
       }
-
-      // Selecionar câmera baseada na configuração
       MediaDeviceInfo? selectedCamera = _availableCameras.firstWhere(
         (camera) => camera.label.toLowerCase().contains(_config.cameraType),
         orElse: () => _availableCameras.first,
       );
-
       ErrorHandler.logInfo('Selecionando câmera: ${selectedCamera.label} (${selectedCamera.deviceId})');
-
       final Map<String, dynamic> mediaConstraints = {
         'audio': _config.audio,
         'video': {
@@ -254,10 +250,9 @@ class _CameraStreamingPageState extends State<CameraStreamingPage> {
           'height': {'ideal': _config.height, 'min': _config.height ~/ 2},
           'frameRate': {'ideal': _config.frameRate, 'min': 15, 'max': _config.frameRate},
           'facingMode': _config.cameraType == 'back' ? 'environment' : 'user',
-          'aspectRatio': 1.7777777778, // 16:9
+          'aspectRatio': 1.7777777778,
         },
       };
-
       ErrorHandler.logInfo('Configurações de mídia: $mediaConstraints');
       final stream = await navigator.mediaDevices.getUserMedia(mediaConstraints);
       ErrorHandler.logInfo('Stream de câmera obtido com sucesso');
@@ -309,7 +304,7 @@ class _CameraStreamingPageState extends State<CameraStreamingPage> {
         'offerToReceiveVideo': false,
         'offerToReceiveAudio': _config.audio,
       });
-      
+
       await _peerConnection!.setLocalDescription(offer);
       ErrorHandler.logInfo('Oferta criada e definida localmente');
 
@@ -317,7 +312,7 @@ class _CameraStreamingPageState extends State<CameraStreamingPage> {
         _channel!.sink.add(jsonEncode({
           'sdp': offer.toMap(),
         }));
-        
+
         setState(() {
           _connectionStatus = 'Enviando oferta...';
         });
@@ -385,7 +380,7 @@ class _CameraStreamingPageState extends State<CameraStreamingPage> {
               maxBitrate: _config.maxBitrate,
               minBitrate: _config.minBitrate,
               maxFramerate: _config.frameRate,
-              scaleResolutionDownBy: _config.width / _config.height,
+              scaleResolutionDownBy: 1,
             ),
           ];
           sender.setParameters(parameters);
@@ -435,7 +430,7 @@ class _CameraStreamingPageState extends State<CameraStreamingPage> {
           final errorMessage = ErrorHandler.getWebSocketErrorMessage(error);
           _setError('Erro WebSocket: $errorMessage');
           ErrorHandler.logError('Erro WebSocket', error: error);
-          
+
           if (_isStreaming) {
             _attemptReconnect();
           }
@@ -445,7 +440,7 @@ class _CameraStreamingPageState extends State<CameraStreamingPage> {
             _connectionStatus = 'Conexão WebSocket fechada';
           });
           ErrorHandler.logWarning('Conexão WebSocket fechada');
-          
+
           if (_isStreaming) {
             _attemptReconnect();
           }
@@ -457,8 +452,7 @@ class _CameraStreamingPageState extends State<CameraStreamingPage> {
           _connectionStatus = 'Conectado ao servidor';
         });
         ErrorHandler.logInfo('WebSocket conectado com sucesso');
-        
-        // Iniciar monitoramento de bateria
+
         _batteryMonitor = BatteryMonitor(
           onBatteryUpdate: (batteryInfo) {
             if (_channel != null) {
@@ -478,7 +472,7 @@ class _CameraStreamingPageState extends State<CameraStreamingPage> {
           },
         );
         _batteryMonitor?.startMonitoring();
-        
+
         _initializeWebRTC();
       }).catchError((error) {
         final errorMessage = ErrorHandler.getWebSocketErrorMessage(error);
@@ -510,17 +504,16 @@ class _CameraStreamingPageState extends State<CameraStreamingPage> {
       if (!_isStreaming || _reconnectAttempts >= maxReconnectAttempts) {
         return;
       }
-      
+
       _reconnectAttempts++;
-      
+
       setState(() {
         _connectionStatus = 'Reconectando... ($_reconnectAttempts/$maxReconnectAttempts)';
       });
-      
-      // Limpar conexões antigas
+
       _peerConnection?.close();
       _channel?.sink.close();
-      
+
       Timer(const Duration(milliseconds: 500), () {
         if (_isStreaming) {
           _startWebSocketConnection();
@@ -533,28 +526,28 @@ class _CameraStreamingPageState extends State<CameraStreamingPage> {
     if (_isStreaming || _isConnecting) {
       return;
     }
-    
+
     setState(() {
       _isStreaming = true;
       _isConnecting = true;
       _errorMessage = '';
       _connectionStatus = 'Iniciando...';
     });
-    
+
     _reconnectAttempts = 0;
     _reconnectTimer?.cancel();
-    
+
     _startWebSocketConnection();
   }
 
   void _stopStreaming() {
     _reconnectTimer?.cancel();
-    _reconnectAttempts = 0; // Reset attempts quando parar manualmente
+    _reconnectAttempts = 0;
     _batteryMonitor?.stopMonitoring();
     _peerConnection?.close();
     _localStream?.dispose();
     _channel?.sink.close();
-    
+
     setState(() {
       _isStreaming = false;
       _isConnecting = false;
@@ -584,20 +577,26 @@ class _CameraStreamingPageState extends State<CameraStreamingPage> {
           setState(() {
             _config = newConfig;
           });
-          
+
           try {
             await StreamingConfigManager.saveConfig(newConfig);
             ErrorHandler.logInfo('Configurações salvas: ${newConfig.toString()}');
           } catch (e) {
             ErrorHandler.logError('Erro ao salvar configurações', error: e);
           }
-          
+
           if (_isStreaming) {
             _stopStreaming();
           }
         },
       ),
     );
+  }
+
+  void _toggleCameraVisibility() {
+    setState(() {
+      _isCameraVisible = !_isCameraVisible;
+    });
   }
 
   @override
@@ -609,8 +608,110 @@ class _CameraStreamingPageState extends State<CameraStreamingPage> {
     super.dispose();
   }
 
+  Widget _buildStatusBar(BuildContext context) {
+    final isLandscape = MediaQuery.of(context).orientation == Orientation.landscape;
+    final statusColor = _errorMessage.isNotEmpty
+        ? Colors.red.withOpacity(0.2)
+        : _isStreaming
+            ? Colors.green.withOpacity(0.2)
+            : Colors.orange.withOpacity(0.2);
+
+    if (isLandscape) {
+      // Compacto para paisagem
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        color: statusColor,
+        child: Row(
+          children: [
+            Icon(
+              _isStreaming ? Icons.circle : Icons.circle_outlined,
+              color: _isStreaming ? Colors.green : Colors.grey,
+              size: 14,
+            ),
+            const SizedBox(width: 6),
+            Expanded(
+              child: Text(
+                _connectionStatus,
+                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 11),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            if (_errorMessage.isNotEmpty)
+              const Padding(
+                padding: EdgeInsets.only(left: 8),
+                child: Icon(Icons.error, color: Colors.red, size: 14),
+              ),
+            const SizedBox(width: 6),
+            Text(
+              '${_config.width}x${_config.height}@${_config.frameRate}fps',
+              style: const TextStyle(fontSize: 10),
+            ),
+            const SizedBox(width: 6),
+            Flexible(
+              child: Text(
+                _config.server,
+                style: const TextStyle(fontSize: 10),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ],
+        ),
+      );
+    } else {
+      // Completo para retrato
+      return Container(
+        padding: const EdgeInsets.all(16),
+        color: statusColor,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  _isStreaming ? Icons.circle : Icons.circle_outlined,
+                  color: _isStreaming ? Colors.green : Colors.grey,
+                  size: 16,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Status: $_connectionStatus',
+                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+                  ),
+                ),
+              ],
+            ),
+            if (_errorMessage.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Text(
+                'Erro: $_errorMessage',
+                style: const TextStyle(color: Colors.red, fontSize: 10),
+              ),
+            ],
+            const SizedBox(height: 8),
+            Text(
+              'Servidor: ${_config.server}',
+              style: const TextStyle(fontSize: 10),
+            ),
+            Text(
+              'Resolução: ${_config.width}x${_config.height}',
+              style: const TextStyle(fontSize: 10),
+            ),
+            Text(
+              'FPS: ${_config.frameRate}',
+              style: const TextStyle(fontSize: 10),
+            ),
+          ],
+        ),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    final isLandscape = MediaQuery.of(context).orientation == Orientation.landscape;
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('StreamEasy'),
@@ -628,32 +729,45 @@ class _CameraStreamingPageState extends State<CameraStreamingPage> {
             flex: 3,
             child: Container(
               color: Colors.black,
-              child: _localStream != null
-                ? RTCVideoView(
-                    _localRenderer,
-                    objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
-                  )
-                : const Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(
-                          Icons.videocam_off,
-                          size: 64,
-                          color: Colors.grey,
-                        ),
-                        SizedBox(height: 16),
-                        Text(
-                          'Câmera não iniciada',
-                          style: TextStyle(color: Colors.grey),
-                        ),
-                      ],
+              child: _isCameraVisible
+                  ? (_localStream != null
+                      ? RTCVideoView(
+                          _localRenderer,
+                          objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
+                        )
+                      : const Center(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(
+                                Icons.videocam_off,
+                                size: 64,
+                                color: Colors.grey,
+                              ),
+                              SizedBox(height: 16),
+                              Text(
+                                'Câmera não iniciada',
+                                style: TextStyle(color: Colors.grey),
+                              ),
+                            ],
+                          ),
+                        ))
+                  : const Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.visibility_off, size: 64, color: Colors.grey),
+                          SizedBox(height: 16),
+                          Text(
+                            'Visualização oculta para economia de bateria',
+                            style: TextStyle(color: Colors.grey),
+                            textAlign: TextAlign.center,
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
             ),
           ),
-          
-          // Control panel - painel lateral
           Expanded(
             flex: 1,
             child: Container(
@@ -661,62 +775,8 @@ class _CameraStreamingPageState extends State<CameraStreamingPage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  // Status bar
-                  Container(
-                    padding: const EdgeInsets.all(16),
-                    color: _errorMessage.isNotEmpty 
-                      ? Colors.red.withOpacity(0.2)
-                      : _isStreaming 
-                        ? Colors.green.withOpacity(0.2)
-                        : Colors.orange.withOpacity(0.2),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Row(
-                          children: [
-                            Icon(
-                              _isStreaming ? Icons.circle : Icons.circle_outlined,
-                              color: _isStreaming ? Colors.green : Colors.grey,
-                              size: 16,
-                            ),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: Text(
-                                'Status: $_connectionStatus',
-                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
-                              ),
-                            ),
-                          ],
-                        ),
-                        if (_errorMessage.isNotEmpty) ...[
-                          const SizedBox(height: 8),
-                          Text(
-                            'Erro: $_errorMessage',
-                            style: const TextStyle(color: Colors.red, fontSize: 10),
-                          ),
-                        ],
-                        const SizedBox(height: 8),
-                        Text(
-                          'Servidor: ${_config.server}',
-                          style: const TextStyle(fontSize: 10),
-                        ),
-                        Text(
-                          'Resolução: ${_config.width}x${_config.height}',
-                          style: const TextStyle(fontSize: 10),
-                        ),
-                        Text(
-                          'FPS: ${_config.frameRate}',
-                          style: const TextStyle(fontSize: 10),
-                        ),
-                      ],
-                    ),
-                  ),
-                  
-                  // Espaçador
+                  _buildStatusBar(context),
                   const Spacer(),
-                  
-                  // Controls
                   Padding(
                     padding: const EdgeInsets.all(16),
                     child: Column(
@@ -725,9 +785,9 @@ class _CameraStreamingPageState extends State<CameraStreamingPage> {
                         ElevatedButton.icon(
                           onPressed: _isConnecting ? null : (_isStreaming ? _stopStreaming : _startStreaming),
                           icon: Icon(_isStreaming ? Icons.stop : Icons.play_arrow),
-                          label: Text(_isConnecting 
-                            ? 'Conectando...' 
-                            : (_isStreaming ? 'Parar' : 'Iniciar')),
+                          label: Text(_isConnecting
+                              ? 'Conectando...'
+                              : (_isStreaming ? 'Parar' : 'Iniciar')),
                           style: ElevatedButton.styleFrom(
                             backgroundColor: _isStreaming ? Colors.red : Colors.green,
                             foregroundColor: Colors.white,
@@ -739,6 +799,15 @@ class _CameraStreamingPageState extends State<CameraStreamingPage> {
                           onPressed: _showConfigDialog,
                           icon: const Icon(Icons.tune),
                           label: const Text('Configurar'),
+                          style: ElevatedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        ElevatedButton.icon(
+                          onPressed: _toggleCameraVisibility,
+                          icon: Icon(_isCameraVisible ? Icons.visibility : Icons.visibility_off),
+                          label: Text(_isCameraVisible ? 'Ocultar Câmera' : 'Mostrar Câmera'),
                           style: ElevatedButton.styleFrom(
                             padding: const EdgeInsets.symmetric(vertical: 12),
                           ),
