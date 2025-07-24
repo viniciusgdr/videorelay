@@ -157,7 +157,7 @@ class _CameraViewerScreenState extends State<CameraViewerScreen> {
                         color: Colors.white54,
                         fontSize: 18,
                       ),
-                    ),
+                    )
                   ],
                 ),
               );

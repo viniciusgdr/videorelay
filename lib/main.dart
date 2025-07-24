@@ -182,7 +182,7 @@ class _CameraStreamingPageState extends State<CameraStreamingPage> {
   List<MediaDeviceInfo> _availableCameras = [];
   Timer? _reconnectTimer;
   int _reconnectAttempts = 0;
-  static const int maxReconnectAttempts = 5;
+  static const int maxReconnectAttempts = 10;
 
   @override
   void initState() {
@@ -254,8 +254,7 @@ class _CameraStreamingPageState extends State<CameraStreamingPage> {
           'height': {'ideal': _config.height, 'min': _config.height ~/ 2},
           'frameRate': {'ideal': _config.frameRate, 'min': 15, 'max': _config.frameRate},
           'facingMode': _config.cameraType == 'back' ? 'environment' : 'user',
-          // Forçar modo paisagem - largura sempre maior que altura
-          'aspectRatio': _config.width / _config.height,
+          'aspectRatio': 1.7777777778, // 16:9
         },
       };
 
@@ -386,7 +385,7 @@ class _CameraStreamingPageState extends State<CameraStreamingPage> {
               maxBitrate: _config.maxBitrate,
               minBitrate: _config.minBitrate,
               maxFramerate: _config.frameRate,
-              scaleResolutionDownBy: 1.0,
+              scaleResolutionDownBy: _config.width / _config.height,
             ),
           ];
           sender.setParameters(parameters);
@@ -437,7 +436,6 @@ class _CameraStreamingPageState extends State<CameraStreamingPage> {
           _setError('Erro WebSocket: $errorMessage');
           ErrorHandler.logError('Erro WebSocket', error: error);
           
-          // Só tentar reconectar se ainda estiver em modo streaming
           if (_isStreaming) {
             _attemptReconnect();
           }
@@ -448,7 +446,6 @@ class _CameraStreamingPageState extends State<CameraStreamingPage> {
           });
           ErrorHandler.logWarning('Conexão WebSocket fechada');
           
-          // Só tentar reconectar se ainda estiver em modo streaming
           if (_isStreaming) {
             _attemptReconnect();
           }
@@ -501,28 +498,20 @@ class _CameraStreamingPageState extends State<CameraStreamingPage> {
   }
 
   void _attemptReconnect() {
-    print('=== TENTATIVA DE RECONEXÃO ===');
-    print('_isStreaming: $_isStreaming');
-    print('_reconnectAttempts: $_reconnectAttempts');
-    
     if (_reconnectAttempts >= maxReconnectAttempts || !_isStreaming) {
       if (_reconnectAttempts >= maxReconnectAttempts) {
         _setError('Máximo de tentativas de reconexão atingido');
       }
-      print('=== RECONEXÃO CANCELADA ===');
       return;
     }
 
     _reconnectTimer?.cancel();
     _reconnectTimer = Timer(Duration(seconds: 3 * (_reconnectAttempts + 1)), () {
-      // Verificar novamente se ainda deve reconectar
       if (!_isStreaming || _reconnectAttempts >= maxReconnectAttempts) {
-        print('=== RECONEXÃO CANCELADA NO TIMER ===');
         return;
       }
       
       _reconnectAttempts++;
-      print('=== EXECUTANDO RECONEXÃO $_reconnectAttempts/$maxReconnectAttempts ===');
       
       setState(() {
         _connectionStatus = 'Reconectando... ($_reconnectAttempts/$maxReconnectAttempts)';
@@ -532,8 +521,7 @@ class _CameraStreamingPageState extends State<CameraStreamingPage> {
       _peerConnection?.close();
       _channel?.sink.close();
       
-      // Aguardar um pouco antes de tentar reconectar
-      Timer(Duration(milliseconds: 500), () {
+      Timer(const Duration(milliseconds: 500), () {
         if (_isStreaming) {
           _startWebSocketConnection();
         }
@@ -542,11 +530,7 @@ class _CameraStreamingPageState extends State<CameraStreamingPage> {
   }
 
   void _startStreaming() {
-    print('=== INICIANDO STREAMING ===');
-    print('_isStreaming: $_isStreaming, _isConnecting: $_isConnecting');
-    
     if (_isStreaming || _isConnecting) {
-      print('=== STREAMING JÁ ATIVO, CANCELANDO ===');
       return;
     }
     
@@ -557,16 +541,13 @@ class _CameraStreamingPageState extends State<CameraStreamingPage> {
       _connectionStatus = 'Iniciando...';
     });
     
-    // Reset attempts quando iniciar manualmente
     _reconnectAttempts = 0;
     _reconnectTimer?.cancel();
     
-    print('=== INICIANDO CONEXÃO WEBSOCKET ===');
     _startWebSocketConnection();
   }
 
   void _stopStreaming() {
-    print('=== PARANDO STREAMING ===');
     _reconnectTimer?.cancel();
     _reconnectAttempts = 0; // Reset attempts quando parar manualmente
     _batteryMonitor?.stopMonitoring();
@@ -583,7 +564,6 @@ class _CameraStreamingPageState extends State<CameraStreamingPage> {
       _peerConnection = null;
       _channel = null;
     });
-    print('=== STREAMING PARADO ===');
   }
 
   void _setError(String error) {
@@ -605,7 +585,6 @@ class _CameraStreamingPageState extends State<CameraStreamingPage> {
             _config = newConfig;
           });
           
-          // Salvar configurações
           try {
             await StreamingConfigManager.saveConfig(newConfig);
             ErrorHandler.logInfo('Configurações salvas: ${newConfig.toString()}');
@@ -645,7 +624,6 @@ class _CameraStreamingPageState extends State<CameraStreamingPage> {
       ),
       body: Row(
         children: [
-          // Video preview - ocupa a maior parte da tela
           Expanded(
             flex: 3,
             child: Container(
@@ -956,7 +934,7 @@ class _StreamingConfigDialogState extends State<StreamingConfigDialog> {
         TextButton(
           onPressed: () async {
             await StreamingConfigManager.resetConfig();
-            final defaultConfig = const StreamingConfig();
+            const defaultConfig = StreamingConfig();
             setState(() {
               _config = defaultConfig;
               _serverController.text = defaultConfig.server;
