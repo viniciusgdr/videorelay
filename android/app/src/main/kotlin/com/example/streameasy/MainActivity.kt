@@ -1,4 +1,4 @@
-package com.example.streameasy
+package com.viniciusgdr.streameasy
 
 import io.flutter.embedding.android.FlutterActivity
 
