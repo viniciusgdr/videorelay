@@ -229,6 +229,9 @@ class WebSocketServerManager extends ChangeNotifier {
           'urls': 'stun:stun.l.google.com:19302',
         },
       ],
+      'sdpSemantics': 'unified-plan',
+      'bundlePolicy': 'max-bundle',
+      'rtcpMuxPolicy': 'require',
     });
 
     print('Peer connection initialized for $connectionId');

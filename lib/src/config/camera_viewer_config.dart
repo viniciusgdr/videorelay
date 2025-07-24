@@ -5,7 +5,7 @@ class CameraViewerConfig {
   // Configurações padrão - APENAS MODO PAISAGEM
   static const bool defaultPortraitMode = false; // Sempre paisagem
   static const double defaultRotationAngle = 0.0;
-  static const RTCVideoViewObjectFit defaultAspectRatio = RTCVideoViewObjectFit.RTCVideoViewObjectFitCover;
+  static const RTCVideoViewObjectFit defaultAspectRatio = RTCVideoViewObjectFit.RTCVideoViewObjectFitContain;
   static const bool defaultMirrored = false;
   static const bool defaultAutoHideControls = true;
   static const Duration autoHideDelay = Duration(seconds: 3);
@@ -18,8 +18,8 @@ class CameraViewerConfig {
 
   // Configurações específicas por plataforma - SEMPRE PAISAGEM
   static RTCVideoViewObjectFit getDefaultAspectRatio() {
-    // Para modo paisagem, preferir cobrir a tela
-    return RTCVideoViewObjectFit.RTCVideoViewObjectFitCover;
+    // Para modo paisagem, preferir ajustar à tela para melhor qualidade
+    return RTCVideoViewObjectFit.RTCVideoViewObjectFitContain;
   }
 
   static bool getDefaultPortraitMode() {

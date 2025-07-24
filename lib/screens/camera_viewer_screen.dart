@@ -338,13 +338,25 @@ class _CameraViewerScreenState extends State<CameraViewerScreen> {
       );
     }
     
-    return SizedBox.expand(
+    return Container(
+      width: double.infinity,
+      height: double.infinity,
+      color: Colors.black,
       child: Transform.rotate(
         angle: _rotationAngle * (3.14159 / 180), // Converter graus para radianos
-        child: RTCVideoView(
-          camera.renderer,
-          objectFit: _aspectRatio,
-          mirror: _isMirrored,
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            return SizedBox(
+              width: constraints.maxWidth,
+              height: constraints.maxHeight,
+              child: RTCVideoView(
+                camera.renderer,
+                objectFit: _aspectRatio,
+                mirror: _isMirrored,
+                filterQuality: FilterQuality.high,
+              ),
+            );
+          },
         ),
       ),
     );
@@ -692,9 +704,9 @@ class _CameraViewerScreenState extends State<CameraViewerScreen> {
   String _getAspectRatioText() {
     switch (_aspectRatio) {
       case RTCVideoViewObjectFit.RTCVideoViewObjectFitCover:
-        return 'Cobrir (padrão)';
+        return 'Cobrir tela';
       case RTCVideoViewObjectFit.RTCVideoViewObjectFitContain:
-        return 'Ajustar à tela';
+        return 'Ajustar à tela (padrão)';
     }
   }
 

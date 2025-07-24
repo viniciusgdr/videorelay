@@ -6,12 +6,12 @@ import 'screens/camera_viewer_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  
+
   await SystemChrome.setPreferredOrientations([
     DeviceOrientation.landscapeLeft,
     DeviceOrientation.landscapeRight,
   ]);
-  
+
   runApp(const MyApp());
 }
 
@@ -36,7 +36,17 @@ class MyApp extends StatelessWidget {
           scaffoldBackgroundColor: Colors.grey[900],
           appBarTheme: const AppBarTheme(
             backgroundColor: Colors.black87,
-            elevation: 0,
+            elevation: 4,
+            centerTitle: true,
+            titleTextStyle: TextStyle(
+              color: Colors.blueAccent,
+              fontSize: 22,
+              fontWeight: FontWeight.bold,
+              letterSpacing: 1.2,
+            ),
+            iconTheme: IconThemeData(color: Colors.blueAccent),
+            shadowColor: Colors.blueAccent,
+            toolbarHeight: 70,
           ),
         ),
         home: const ServerHomePage(),
@@ -56,8 +66,7 @@ class ServerState extends ChangeNotifier {
   String get serverStatus => _serverStatus;
   List<CameraConnection> get cameras => _cameras;
   int get connectedCameras => _cameras.length;
-  WebSocketServerManager get serverManager =>
-      _serverManager; // Adicionar getter
+  WebSocketServerManager get serverManager => _serverManager;
 
   ServerState() {
     _initializeServer();
@@ -127,15 +136,66 @@ class ServerHomePage extends StatelessWidget {
       builder: (context, serverState, child) {
         return Scaffold(
           appBar: AppBar(
-            title: const Row(
+            elevation: 8,
+            backgroundColor: Colors.black87,
+            shadowColor: Colors.blueAccent.withOpacity(0.4),
+            leading: const Padding(
+              padding: EdgeInsets.all(8.0),
+              child: CircleAvatar(
+                backgroundColor: Colors.blueAccent,
+                child: Icon(Icons.computer, color: Colors.white),
+              ),
+            ),
+            title: Row(
               children: [
-                Icon(Icons.computer, color: Colors.blue),
-                SizedBox(width: 8),
-                Text('StreamEasy Server'),
+                const Text(
+                  'StreamEasy Server',
+                  style: TextStyle(
+                    color: Colors.blueAccent,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 22,
+                    letterSpacing: 1.2,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                AnimatedContainer(
+                  duration: const Duration(milliseconds: 400),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: serverState.isServerRunning
+                        ? Colors.green.withOpacity(0.2)
+                        : Colors.red.withOpacity(0.2),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        serverState.isServerRunning
+                            ? Icons.check_circle
+                            : Icons.cancel,
+                        color: serverState.isServerRunning
+                            ? Colors.green
+                            : Colors.red,
+                        size: 16,
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        serverState.isServerRunning ? 'Online' : 'Offline',
+                        style: TextStyle(
+                          color: serverState.isServerRunning
+                              ? Colors.green
+                              : Colors.red,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               ],
             ),
             actions: [
-              // Status do servidor
               Container(
                 padding:
                     const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
@@ -144,6 +204,16 @@ class ServerHomePage extends StatelessWidget {
                   color:
                       serverState.isServerRunning ? Colors.green : Colors.red,
                   borderRadius: BorderRadius.circular(16),
+                  boxShadow: [
+                    BoxShadow(
+                      color: (serverState.isServerRunning
+                              ? Colors.green
+                              : Colors.red)
+                          .withOpacity(0.3),
+                      blurRadius: 8,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
                 ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
@@ -167,7 +237,6 @@ class ServerHomePage extends StatelessWidget {
           ),
           body: Column(
             children: [
-              // Painel de controle
               Container(
                 padding: const EdgeInsets.all(16),
                 margin: const EdgeInsets.all(16),
@@ -293,7 +362,6 @@ class CameraCard extends StatelessWidget {
           padding: const EdgeInsets.all(16),
           child: Row(
             children: [
-              // Ícone da câmera
               Container(
                 width: 60,
                 height: 60,
@@ -336,9 +404,6 @@ class CameraCard extends StatelessWidget {
 
               // Indicador de bateria
               _buildBatteryIndicator(),
-              const SizedBox(width: 16),
-
-              // Status da janela
             ],
           ),
         ),
