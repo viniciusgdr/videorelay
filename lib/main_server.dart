@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import 'package:streameasy/screens/settings.dart';
 import 'src/hooks/websocket_server.dart';
 import 'screens/camera_viewer_screen.dart';
 
@@ -232,6 +233,18 @@ class ServerHomePage extends StatelessWidget {
                     ),
                   ],
                 ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.settings, color: Colors.blueAccent),
+                tooltip: 'Configurações',
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => const SettingsScreen(),
+                    ),
+                  );
+                },
               ),
             ],
           ),
