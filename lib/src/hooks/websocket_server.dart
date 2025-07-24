@@ -168,17 +168,14 @@ class WebSocketServerManager extends ChangeNotifier {
 
     _connections[connectionId] = cameraConnection;
 
-    // Se é a primeira câmera, selecioná-la automaticamente
     _selectedCameraId ??= connectionId;
 
-    // Notificar callback
     onCameraConnected?.call(cameraConnection);
 
     ws.listen((message) async {
       print('Received message: $message');
       var data = jsonDecode(message);
 
-      // Atualizar informações da câmera
       cameraConnection.lastSeen = DateTime.now();
 
       if (data['deviceInfo'] != null) {
@@ -259,7 +256,6 @@ class WebSocketServerManager extends ChangeNotifier {
         connection.isConnected =
             state == RTCPeerConnectionState.RTCPeerConnectionStateConnected;
 
-        // Só remove se realmente falhou ou foi fechado pelo usuário
         if (state == RTCPeerConnectionState.RTCPeerConnectionStateFailed ||
             state == RTCPeerConnectionState.RTCPeerConnectionStateClosed) {
           // Aguardar um pouco antes de remover para permitir reconexões
@@ -292,7 +288,6 @@ class WebSocketServerManager extends ChangeNotifier {
 
       _connections.remove(connectionId);
 
-      // Se a câmera removida era a selecionada, selecionar outra
       if (_selectedCameraId == connectionId) {
         _selectedCameraId =
             _connections.keys.isNotEmpty ? _connections.keys.first : null;

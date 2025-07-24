@@ -7,7 +7,6 @@ import 'screens/camera_viewer_screen.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   
-  // Forçar orientação paisagem apenas no servidor
   await SystemChrome.setPreferredOrientations([
     DeviceOrientation.landscapeLeft,
     DeviceOrientation.landscapeRight,
@@ -51,7 +50,7 @@ class ServerState extends ChangeNotifier {
   final WebSocketServerManager _serverManager = WebSocketServerManager();
   bool _isServerRunning = false;
   String _serverStatus = 'Parado';
-  List<CameraConnection> _cameras = [];
+  final List<CameraConnection> _cameras = [];
 
   bool get isServerRunning => _isServerRunning;
   String get serverStatus => _serverStatus;

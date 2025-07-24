@@ -51,7 +51,6 @@ class _CameraViewerScreenState extends State<CameraViewerScreen> {
 
   void _enableFullscreen() {
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
-    // Forçar apenas modo paisagem
     SystemChrome.setPreferredOrientations([
       DeviceOrientation.landscapeLeft,
       DeviceOrientation.landscapeRight,
@@ -63,7 +62,6 @@ class _CameraViewerScreenState extends State<CameraViewerScreen> {
 
   void _disableFullscreen() {
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
-    // Manter apenas modo paisagem mesmo ao sair de tela cheia
     SystemChrome.setPreferredOrientations([
       DeviceOrientation.landscapeLeft,
       DeviceOrientation.landscapeRight,
@@ -95,7 +93,6 @@ class _CameraViewerScreenState extends State<CameraViewerScreen> {
       _selectedCameraId = cameraId;
     });
     
-    // Also update the server manager's selected camera
     final serverManager = Provider.of<WebSocketServerManager>(context, listen: false);
     serverManager.selectCamera(cameraId);
   }
@@ -382,7 +379,7 @@ class _CameraViewerScreenState extends State<CameraViewerScreen> {
               
               // Camera info
               if (selectedCamera != null) ...[
-                Icon(
+                const Icon(
                   Icons.videocam,
                   color: Colors.blue,
                   size: 24,
