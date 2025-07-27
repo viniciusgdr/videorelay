@@ -710,8 +710,6 @@ class _CameraStreamingPageState extends State<CameraStreamingPage> {
 
   @override
   Widget build(BuildContext context) {
-    final isLandscape = MediaQuery.of(context).orientation == Orientation.landscape;
-
     return Scaffold(
       appBar: AppBar(
         title: const Text('StreamEasy'),
