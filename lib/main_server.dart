@@ -5,14 +5,8 @@ import 'package:streameasy/src/models/camera_connection.dart';
 import 'package:streameasy/src/services/websocket_server_manager.dart';
 import 'screens/camera_viewer_screen.dart';
 
-void main() async {
-  WidgetsFlutterBinding.ensureInitialized();
-
-  runApp(const MyApp());
-}
-
-class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+class ServerApp extends StatelessWidget {
+  const ServerApp({super.key});
 
   @override
   Widget build(BuildContext context) {
