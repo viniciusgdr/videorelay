@@ -167,6 +167,7 @@ class _CameraStreamingPageState extends State<CameraStreamingPage> {
   bool _isStreaming = false;
   bool _isConnecting = false;
   bool _isCameraVisible = true;
+  bool _isMinimalMode = false; // Novo modo minimal para segundo plano
   String _connectionStatus = 'Desconectado';
   String _errorMessage = '';
   List<MediaDeviceInfo> _availableCameras = [];
@@ -584,6 +585,12 @@ class _CameraStreamingPageState extends State<CameraStreamingPage> {
     });
   }
 
+  void _toggleMinimalMode() {
+    setState(() {
+      _isMinimalMode = !_isMinimalMode;
+    });
+  }
+
   @override
   void dispose() {
     _reconnectTimer?.cancel();
@@ -602,48 +609,43 @@ class _CameraStreamingPageState extends State<CameraStreamingPage> {
             : Colors.orange.withOpacity(0.2);
 
     if (isLandscape) {
-      // Compacto para paisagem
       return Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        padding: const EdgeInsets.only(top: 32, left: 12, right: 12, bottom: 6),
         color: statusColor,
         child: Row(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(
-              _isStreaming ? Icons.circle : Icons.circle_outlined,
-              color: _isStreaming ? Colors.green : Colors.grey,
-              size: 14,
-            ),
-            const SizedBox(width: 6),
-            Expanded(
-              child: Text(
-                _connectionStatus,
-                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 11),
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-            if (_errorMessage.isNotEmpty)
-              const Padding(
-                padding: EdgeInsets.only(left: 8),
-                child: Icon(Icons.error, color: Colors.red, size: 14),
-              ),
-            const SizedBox(width: 6),
-            Text(
-              '${_config.width}x${_config.height}@${_config.frameRate}fps',
-              style: const TextStyle(fontSize: 10),
-            ),
-            const SizedBox(width: 6),
-            Flexible(
-              child: Text(
-                _config.server,
-                style: const TextStyle(fontSize: 10),
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
+        Icon(
+          _isStreaming ? Icons.circle : Icons.circle_outlined,
+          color: _isStreaming ? Colors.green : Colors.grey,
+          size: 12,
+        ),
+        const SizedBox(width: 6),
+        Text(
+          _connectionStatus,
+          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 10),
+        ),
+        if (_errorMessage.isNotEmpty) ...[
+          const SizedBox(width: 8),
+          const Icon(Icons.error, color: Colors.red, size: 12),
+        ],
+        const Spacer(),
+        // Indicador de resolução compacto
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+          decoration: BoxDecoration(
+            color: Colors.black26,
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Text(
+            '${_config.width}x${_config.height}',
+            style: const TextStyle(fontSize: 8, fontWeight: FontWeight.bold),
+          ),
+        ),
           ],
         ),
       );
     } else {
-      // Completo para retrato
       return Container(
         padding: const EdgeInsets.all(16),
         color: statusColor,
@@ -695,8 +697,10 @@ class _CameraStreamingPageState extends State<CameraStreamingPage> {
 
   @override
   Widget build(BuildContext context) {
+    final isLandscape = MediaQuery.of(context).orientation == Orientation.landscape;
+    
     return Scaffold(
-      appBar: AppBar(
+      appBar: isLandscape ? null : AppBar(
         title: const Text('StreamEasy'),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
         actions: [
@@ -706,104 +710,266 @@ class _CameraStreamingPageState extends State<CameraStreamingPage> {
           ),
         ],
       ),
-      body: Row(
-        children: [
-          Expanded(
-            flex: 3,
-            child: Container(
-              color: Colors.black,
-              child: _isCameraVisible
-                  ? (_localStream != null
-                      ? RTCVideoView(
-                          _localRenderer,
-                          objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
-                        )
-                      : const Center(
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Icon(
-                                Icons.videocam_off,
-                                size: 64,
-                                color: Colors.grey,
-                              ),
-                              SizedBox(height: 16),
-                              Text(
-                                'Câmera não iniciada',
-                                style: TextStyle(color: Colors.grey),
-                              ),
-                            ],
-                          ),
-                        ))
+      body: isLandscape ? _buildLandscapeLayout(context) : _buildPortraitLayout(context),
+    );
+  }
+
+  Widget _buildLandscapeLayout(BuildContext context) {
+    return Stack(
+      children: [
+        // Tela principal da câmera
+        Container(
+          color: Colors.black,
+          child: _isCameraVisible
+              ? (_localStream != null
+                  ? RTCVideoView(
+                      _localRenderer,
+                      objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
+                    )
                   : const Center(
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          Icon(Icons.visibility_off, size: 64, color: Colors.grey),
+                          Icon(
+                            Icons.videocam_off,
+                            size: 64,
+                            color: Colors.grey,
+                          ),
                           SizedBox(height: 16),
                           Text(
-                            'Visualização oculta para economia de bateria',
+                            'Câmera não iniciada',
                             style: TextStyle(color: Colors.grey),
-                            textAlign: TextAlign.center,
                           ),
                         ],
                       ),
-                    ),
-            ),
+                    ))
+              : const Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.visibility_off, size: 64, color: Colors.grey),
+                      SizedBox(height: 16),
+                      Text(
+                        'Visualização oculta para economia de bateria',
+                        style: TextStyle(color: Colors.grey),
+                        textAlign: TextAlign.center,
+                      ),
+                    ],
+                  ),
+                ),
+        ),
+        
+        // Barra de status no topo (apenas se não estiver em modo minimal)
+        if (!_isMinimalMode)
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            child: _buildStatusBar(context),
           ),
-          Expanded(
-            flex: 1,
+        
+        // Controles flutuantes no canto inferior direito
+        Positioned(
+          bottom: 16,
+          right: 16,
+          child: _isMinimalMode ? _buildMinimalControls() : _buildFullControls(),
+        ),
+        
+        // Indicador minimal quando em segundo plano
+        if (_isMinimalMode)
+          Positioned(
+            top: 8,
+            right: 8,
             child: Container(
-              color: Theme.of(context).scaffoldBackgroundColor,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: _isStreaming ? Colors.green.withOpacity(0.8) : Colors.red.withOpacity(0.8),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  _buildStatusBar(context),
-                  const Spacer(),
-                  Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        ElevatedButton.icon(
-                          onPressed: _isConnecting ? null : (_isStreaming ? _stopStreaming : _startStreaming),
-                          icon: Icon(_isStreaming ? Icons.stop : Icons.play_arrow),
-                          label: Text(_isConnecting
-                              ? 'Conectando...'
-                              : (_isStreaming ? 'Parar' : 'Iniciar')),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: _isStreaming ? Colors.red : Colors.green,
-                            foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(vertical: 12),
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        ElevatedButton.icon(
-                          onPressed: _showConfigDialog,
-                          icon: const Icon(Icons.tune),
-                          label: const Text('Configurar'),
-                          style: ElevatedButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(vertical: 12),
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        ElevatedButton.icon(
-                          onPressed: _toggleCameraVisibility,
-                          icon: Icon(_isCameraVisible ? Icons.visibility : Icons.visibility_off),
-                          label: Text(_isCameraVisible ? 'Ocultar Câmera' : 'Mostrar Câmera'),
-                          style: ElevatedButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(vertical: 12),
-                          ),
-                        ),
-                      ],
+                  Icon(
+                    _isStreaming ? Icons.circle : Icons.circle_outlined,
+                    color: Colors.white,
+                    size: 10,
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    _isStreaming ? 'LIVE' : 'OFF',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 8,
+                      fontWeight: FontWeight.bold,
                     ),
                   ),
                 ],
               ),
             ),
           ),
-        ],
-      ),
+      ],
+    );
+  }
+
+  Widget _buildMinimalControls() {
+    return FloatingActionButton(
+      mini: true,
+      heroTag: "minimal_toggle",
+      onPressed: _toggleMinimalMode,
+      backgroundColor: Colors.black54,
+      child: const Icon(Icons.fullscreen, color: Colors.white),
+    );
+  }
+
+  Widget _buildFullControls() {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        // Botão de modo minimal
+        FloatingActionButton(
+          mini: true,
+          heroTag: "minimal",
+          onPressed: _toggleMinimalMode,
+          backgroundColor: Colors.black54,
+          child: const Icon(Icons.fullscreen_exit, color: Colors.white),
+        ),
+        const SizedBox(height: 8),
+        
+        // Botão de configurações
+        FloatingActionButton(
+          mini: true,
+          heroTag: "settings",
+          onPressed: _showConfigDialog,
+          backgroundColor: Colors.black54,
+          child: const Icon(Icons.settings, color: Colors.white),
+        ),
+        const SizedBox(height: 8),
+        
+        // Botão de visibilidade da câmera
+        FloatingActionButton(
+          mini: true,
+          heroTag: "visibility",
+          onPressed: _toggleCameraVisibility,
+          backgroundColor: Colors.black54,
+          child: Icon(
+            _isCameraVisible ? Icons.visibility : Icons.visibility_off,
+            color: Colors.white,
+          ),
+        ),
+        const SizedBox(height: 8),
+        
+        // Botão principal de start/stop
+        FloatingActionButton(
+          heroTag: "startstop",
+          onPressed: _isConnecting ? null : (_isStreaming ? _stopStreaming : _startStreaming),
+          backgroundColor: _isStreaming ? Colors.red : Colors.green,
+          child: Icon(
+            _isStreaming ? Icons.stop : Icons.play_arrow,
+            color: Colors.white,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildPortraitLayout(BuildContext context) {
+    return Row(
+      children: [
+        Expanded(
+          flex: 3,
+          child: Container(
+            color: Colors.black,
+            child: _isCameraVisible
+                ? (_localStream != null
+                    ? RTCVideoView(
+                        _localRenderer,
+                        objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
+                      )
+                    : const Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              Icons.videocam_off,
+                              size: 64,
+                              color: Colors.grey,
+                            ),
+                            SizedBox(height: 16),
+                            Text(
+                              'Câmera não iniciada',
+                              style: TextStyle(color: Colors.grey),
+                            ),
+                          ],
+                        ),
+                      ))
+                : const Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.visibility_off, size: 64, color: Colors.grey),
+                        SizedBox(height: 16),
+                        Text(
+                          'Visualização oculta para economia de bateria',
+                          style: TextStyle(color: Colors.grey),
+                          textAlign: TextAlign.center,
+                        ),
+                      ],
+                    ),
+                  ),
+          ),
+        ),
+        Expanded(
+          flex: 1,
+          child: Container(
+            color: Theme.of(context).scaffoldBackgroundColor,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _buildStatusBar(context),
+                const Spacer(),
+                Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      ElevatedButton.icon(
+                        onPressed: _isConnecting ? null : (_isStreaming ? _stopStreaming : _startStreaming),
+                        icon: Icon(_isStreaming ? Icons.stop : Icons.play_arrow),
+                        label: Text(_isConnecting
+                            ? 'Conectando...'
+                            : (_isStreaming ? 'Parar' : 'Iniciar')),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: _isStreaming ? Colors.red : Colors.green,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      ElevatedButton.icon(
+                        onPressed: _showConfigDialog,
+                        icon: const Icon(Icons.tune),
+                        label: const Text('Configurar'),
+                        style: ElevatedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      ElevatedButton.icon(
+                        onPressed: _toggleCameraVisibility,
+                        icon: Icon(_isCameraVisible ? Icons.visibility : Icons.visibility_off),
+                        label: Text(_isCameraVisible ? 'Ocultar Câmera' : 'Mostrar Câmera'),
+                        style: ElevatedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
