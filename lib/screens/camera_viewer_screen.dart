@@ -2,7 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
-import '../src/hooks/websocket_server.dart';
+import 'package:streameasy/src/models/camera_connection.dart';
+import 'package:streameasy/src/services/websocket_server_manager.dart';
 import '../src/config/camera_viewer_config.dart';
 
 class CameraViewerScreen extends StatefulWidget {

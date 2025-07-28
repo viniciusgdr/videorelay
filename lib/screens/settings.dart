@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:streameasy/src/hooks/websocket_server.dart';
+import 'package:streameasy/src/services/websocket_server_manager.dart';
 import '../src/config/server_ui_config.dart';
 
 class SettingsScreen extends StatefulWidget {

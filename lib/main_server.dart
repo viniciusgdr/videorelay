@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:streameasy/screens/settings.dart';
-import 'src/hooks/websocket_server.dart';
+import 'package:streameasy/src/models/camera_connection.dart';
+import 'package:streameasy/src/services/websocket_server_manager.dart';
 import 'screens/camera_viewer_screen.dart';
 
 void main() async {
