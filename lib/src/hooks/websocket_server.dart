@@ -104,7 +104,6 @@ class WebSocketServerManager extends ChangeNotifier {
   Future<void> _loadPort() async {
     final prefs = await SharedPreferences.getInstance();
     _port = prefs.getInt('websocket_port') ?? 8080;
-    _startServer();
   }
 
   Future<void> _savePort() async {
@@ -114,15 +113,42 @@ class WebSocketServerManager extends ChangeNotifier {
 
   Future<void> _startServer() async {
     await stopServer();
-    _server = await HttpServer.bind('0.0.0.0', _port);
+    _server = await HttpServer.bind('0.0.0.0', _port, shared: true);
     print('WebSocket server is running on ws://localhost:$_port');
 
     _server?.listen((HttpRequest request) async {
+      // Enable CORS for web clients
+      request.response.headers.add('Access-Control-Allow-Origin', '*');
+      request.response.headers
+          .add('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+      request.response.headers
+          .add('Access-Control-Allow-Headers', 'Content-Type');
+
+      if (request.method == 'OPTIONS') {
+        request.response.statusCode = HttpStatus.ok;
+        request.response.close();
+        return;
+      }
+
       if (WebSocketTransformer.isUpgradeRequest(request)) {
         WebSocket ws = await WebSocketTransformer.upgrade(request);
-        _handleWebSocket(ws);
+
+        // Verificar se é um viewer web ou uma câmera
+        if (request.uri.path.startsWith('/ws/viewer/') ||
+            request.uri.path.startsWith('/signaling/')) {
+          _handleWebViewerSocket(ws, request);
+        } else {
+          _handleWebSocket(ws);
+        }
+      } else if (request.uri.path == '/api/cameras') {
+        _handleCamerasApi(request);
+      } else if (request.uri.path.startsWith('/api/camera/')) {
+        _handleCameraApi(request);
+      } else if (request.uri.path.startsWith('/stream/')) {
+        _handleStreamApi(request);
       } else {
-        request.response.statusCode = HttpStatus.forbidden;
+        request.response.statusCode = HttpStatus.notFound;
+        request.response.write('Not Found');
         request.response.close();
       }
     });
@@ -173,7 +199,6 @@ class WebSocketServerManager extends ChangeNotifier {
     onCameraConnected?.call(cameraConnection);
 
     ws.listen((message) async {
-      print('Received message: $message');
       var data = jsonDecode(message);
 
       cameraConnection.lastSeen = DateTime.now();
@@ -234,16 +259,13 @@ class WebSocketServerManager extends ChangeNotifier {
       'rtcpMuxPolicy': 'require',
     });
 
-    print('Peer connection initialized for $connectionId');
     peerConnection.onIceCandidate = (RTCIceCandidate candidate) {
       ws.add(jsonEncode({'candidate': candidate.toMap()}));
     };
 
     peerConnection.onTrack = (RTCTrackEvent event) {
-      print('Received remote track: ${event.track.kind} for $connectionId');
       if (event.track.kind == 'video') {
         remoteRenderer.srcObject = event.streams[0];
-        // Notificar que o stream foi atualizado
         final connection = _connections[connectionId];
         if (connection != null) {
           onCameraUpdated?.call(connection);
@@ -302,6 +324,226 @@ class WebSocketServerManager extends ChangeNotifier {
       print('Connection $connectionId removed');
       notifyListeners();
     }
+  }
+
+  void _handleCamerasApi(HttpRequest request) async {
+    if (request.method == 'GET') {
+      final cameras = _connections.values
+          .map((camera) => {
+                'id': camera.id,
+                'deviceId': camera.deviceId,
+                'deviceName': camera.deviceName,
+                'deviceModel': camera.deviceModel,
+                'batteryLevel': camera.batteryLevel,
+                'batteryStatus': camera.batteryStatus,
+                'isConnected': camera.isConnected,
+                'isCharging': camera.isCharging,
+                'hasVideoStream': camera.hasVideoStream,
+                'lastSeen': camera.lastSeen.toIso8601String(),
+              })
+          .toList();
+
+      request.response.headers.contentType = ContentType.json;
+      request.response.write(jsonEncode({
+        'cameras': cameras,
+        'totalCameras': cameras.length,
+        'serverStatus': 'running',
+        'port': _port,
+      }));
+      request.response.close();
+    } else {
+      request.response.statusCode = HttpStatus.methodNotAllowed;
+      request.response.close();
+    }
+  }
+
+  void _handleCameraApi(HttpRequest request) async {
+    final cameraId = request.uri.pathSegments.last;
+    final camera = _connections[cameraId];
+
+    if (camera == null) {
+      request.response.statusCode = HttpStatus.notFound;
+      request.response.write(jsonEncode({'error': 'Camera not found'}));
+      request.response.close();
+      return;
+    }
+
+    if (request.method == 'GET') {
+      request.response.headers.contentType = ContentType.json;
+      request.response.write(jsonEncode({
+        'id': camera.id,
+        'deviceId': camera.deviceId,
+        'deviceName': camera.deviceName,
+        'deviceModel': camera.deviceModel,
+        'batteryLevel': camera.batteryLevel,
+        'batteryStatus': camera.batteryStatus,
+        'isConnected': camera.isConnected,
+        'isCharging': camera.isCharging,
+        'hasVideoStream': camera.hasVideoStream,
+        'lastSeen': camera.lastSeen.toIso8601String(),
+        'webSocketUrl': 'ws://localhost:$_port/ws/$cameraId',
+        'streamUrl': 'http://localhost:$_port/stream/$cameraId',
+      }));
+      request.response.close();
+    } else {
+      request.response.statusCode = HttpStatus.methodNotAllowed;
+      request.response.close();
+    }
+  }
+
+  void _handleStreamApi(HttpRequest request) async {
+    final cameraId = request.uri.pathSegments.last;
+    final camera = _connections[cameraId];
+
+    if (camera == null) {
+      request.response.statusCode = HttpStatus.notFound;
+      request.response.write('Camera not found');
+      request.response.close();
+      return;
+    }
+
+    if (request.method == 'GET') {
+      request.response.headers.contentType = ContentType.json;
+      request.response.write(jsonEncode({
+        'cameraId': cameraId,
+        'deviceName': camera.deviceName,
+        'hasStream': camera.hasVideoStream,
+        'webSocketUrl': 'ws://localhost:$_port/ws/viewer/$cameraId',
+        'signaling': {
+          'url': 'ws://localhost:$_port/signaling/$cameraId',
+          'protocol': 'webrtc'
+        }
+      }));
+      request.response.close();
+    } else {
+      request.response.statusCode = HttpStatus.methodNotAllowed;
+      request.response.close();
+    }
+  }
+
+  void _handleWebViewerSocket(WebSocket ws, HttpRequest request) async {
+    print('Web viewer WebSocket connection established');
+
+    // Extrair ID da câmera da URL
+    String? cameraId;
+    if (request.uri.path.startsWith('/ws/viewer/')) {
+      cameraId = request.uri.pathSegments.last;
+    } else if (request.uri.path.startsWith('/signaling/')) {
+      cameraId = request.uri.pathSegments.last;
+    }
+    if (cameraId == null || !_connections.containsKey(cameraId)) {
+      ws.add(jsonEncode({'error': 'Camera not found', 'cameraId': cameraId}));
+      ws.close();
+      return;
+    }
+
+    final camera = _connections[cameraId]!;
+
+    if (!camera.hasVideoStream) {
+      int attempts = 0;
+      while (!camera.hasVideoStream && attempts < 10) {
+        await Future.delayed(const Duration(milliseconds: 500));
+        attempts++;
+      }
+
+      if (!camera.hasVideoStream) {
+        ws.add(jsonEncode({'error': 'Camera stream not available'}));
+        ws.close();
+        return;
+      }
+    }
+
+    RTCVideoRenderer viewerRenderer = RTCVideoRenderer();
+    await viewerRenderer.initialize();
+
+    RTCPeerConnection viewerPeerConnection = await createPeerConnection({
+      'iceServers': [
+        {
+          'urls': 'stun:stun.l.google.com:19302',
+        },
+      ],
+      'sdpSemantics': 'unified-plan',
+      'bundlePolicy': 'max-bundle',
+      'rtcpMuxPolicy': 'require',
+    });
+
+    // Configurar callbacks do peer connection do viewer
+    viewerPeerConnection.onIceCandidate = (RTCIceCandidate candidate) {
+      if (ws.readyState == WebSocket.open) {
+        ws.add(jsonEncode({
+          'candidate': candidate.candidate,
+          'sdpMLineIndex': candidate.sdpMLineIndex,
+          'sdpMid': candidate.sdpMid
+        }));
+      }
+    };
+
+    ws.listen((message) async {
+      try {
+        final data = jsonDecode(message);
+        print('Web viewer message: ${data.keys.join(", ")}');
+
+        if (data['sdp'] != null) {
+          print('Viewer SDP received: ${data['sdp']['type']}');
+          await viewerPeerConnection.setRemoteDescription(
+              RTCSessionDescription(data['sdp']['sdp'], data['sdp']['type']));
+
+          if (data['sdp']['type'] == 'offer') {
+            if (camera.renderer.srcObject != null) {
+              final stream = camera.renderer.srcObject!;
+              final videoTracks = stream.getVideoTracks();
+              final audioTracks = stream.getAudioTracks();
+
+              if (videoTracks.isNotEmpty) {
+                for (final track in videoTracks) {
+                  await viewerPeerConnection.addTrack(track, stream);
+                }
+              }
+              if (audioTracks.isNotEmpty) {
+                for (final track in audioTracks) {
+                  await viewerPeerConnection.addTrack(track, stream);
+                }
+              }
+            } else {
+              ws.add(jsonEncode({'error': 'Camera stream not available'}));
+            }
+
+            final answer = await viewerPeerConnection.createAnswer();
+            await viewerPeerConnection.setLocalDescription(answer);
+
+            ws.add(jsonEncode({
+              'sdp': {'type': answer.type, 'sdp': answer.sdp}
+            }));
+          }
+        } else if (data['candidate'] != null) {
+          await viewerPeerConnection.addCandidate(RTCIceCandidate(
+              data['candidate']['candidate'],
+              data['candidate']['sdpMid'],
+              data['candidate']['sdpMLineIndex']));
+        }
+      } catch (e) {
+        print('Error handling web viewer message: $e');
+      }
+    }, onDone: () {
+      print('Web viewer disconnected from camera $cameraId');
+      viewerPeerConnection.dispose();
+      viewerRenderer.dispose();
+    }, onError: (error) {
+      print('Web viewer WebSocket error: $error');
+      viewerPeerConnection.dispose();
+      viewerRenderer.dispose();
+    });
+
+    ws.add(jsonEncode({
+      'type': 'camera_info',
+      'camera': {
+        'id': camera.id,
+        'deviceName': camera.deviceName,
+        'deviceModel': camera.deviceModel,
+        'batteryLevel': camera.batteryLevel,
+        'isCharging': camera.isCharging,
+      }
+    }));
   }
 
   @override

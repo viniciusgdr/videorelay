@@ -92,7 +92,7 @@ class ServerState extends ChangeNotifier {
     try {
       await _serverManager.startServer();
       _isServerRunning = true;
-      _serverStatus = 'Rodando na porta 8080';
+      _serverStatus = 'Rodando na porta ${_serverManager.port}';
       notifyListeners();
     } catch (e) {
       _serverStatus = 'Erro: $e';
@@ -124,6 +124,95 @@ class ServerState extends ChangeNotifier {
 
 class ServerHomePage extends StatelessWidget {
   const ServerHomePage({super.key});
+
+  void _openWebInterface(BuildContext context, ServerState serverState) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          backgroundColor: Colors.grey[800],
+          title: const Row(
+            children: [
+              Icon(Icons.web, color: Colors.blueAccent),
+              SizedBox(width: 8),
+              Text(
+                'Interface Web',
+                style: TextStyle(color: Colors.white),
+              ),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Acesse a interface web através dos seguintes endereços:',
+                style: TextStyle(color: Colors.white70),
+              ),
+              const SizedBox(height: 16),
+              _buildUrlCard('Local:', 'http://localhost:${serverState.serverManager.port}'),
+              const SizedBox(height: 16),
+              const Text(
+                'Funcionalidades disponíveis:',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                '• Visualizar todas as câmeras conectadas\n'
+                '• Abrir câmeras em janelas separadas\n'
+                '• Modo tela cheia para cada câmera\n'
+                '• Informações de bateria e status',
+                style: TextStyle(color: Colors.white70),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text(
+                'Fechar',
+                style: TextStyle(color: Colors.blueAccent),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildUrlCard(String label, String url) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.grey[700],
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        children: [
+          Text(
+            label,
+            style: const TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              url,
+              style: const TextStyle(
+                color: Colors.blueAccent,
+                fontFamily: 'monospace',
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -228,6 +317,12 @@ class ServerHomePage extends StatelessWidget {
                   ],
                 ),
               ),
+              if (serverState.isServerRunning)
+                IconButton(
+                  icon: const Icon(Icons.web, color: Colors.blueAccent),
+                  tooltip: 'Abrir Interface Web',
+                  onPressed: () => _openWebInterface(context, serverState),
+                ),
               IconButton(
                 icon: const Icon(Icons.settings, color: Colors.blueAccent),
                 tooltip: 'Configurações',
@@ -270,6 +365,16 @@ class ServerHomePage extends StatelessWidget {
                             '${serverState.connectedCameras} câmeras conectadas',
                             style: const TextStyle(color: Colors.white70),
                           ),
+                          if (serverState.isServerRunning) ...[
+                            const SizedBox(height: 4),
+                            Text(
+                              'Interface web: http://localhost:${serverState.serverManager.port}',
+                              style: const TextStyle(
+                                color: Colors.blueAccent,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ],
                         ],
                       ),
                     ),
@@ -317,6 +422,17 @@ class ServerHomePage extends StatelessWidget {
                                 color: Colors.grey[600],
                               ),
                             ),
+                            if (serverState.isServerRunning) ...[
+                              const SizedBox(height: 16),
+                              ElevatedButton.icon(
+                                onPressed: () => _openWebInterface(context, serverState),
+                                icon: const Icon(Icons.web),
+                                label: const Text('Abrir Interface Web'),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: Colors.blueAccent,
+                                ),
+                              ),
+                            ],
                           ],
                         ),
                       )
@@ -332,18 +448,32 @@ class ServerHomePage extends StatelessWidget {
             ],
           ),
           floatingActionButton: serverState.cameras.isNotEmpty
-              ? FloatingActionButton.extended(
-                  onPressed: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => const CameraViewerScreen(),
-                      ),
-                    );
-                  },
-                  backgroundColor: Colors.blue,
-                  icon: const Icon(Icons.fullscreen),
-                  label: const Text('Visualizar'),
+              ? Column(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    FloatingActionButton(
+                      heroTag: "web",
+                      onPressed: () => _openWebInterface(context, serverState),
+                      backgroundColor: Colors.blueAccent,
+                      tooltip: 'Interface Web',
+                      child: const Icon(Icons.web),
+                    ),
+                    const SizedBox(height: 10),
+                    FloatingActionButton.extended(
+                      heroTag: "viewer",
+                      onPressed: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => const CameraViewerScreen(),
+                          ),
+                        );
+                      },
+                      backgroundColor: Colors.green,
+                      icon: const Icon(Icons.fullscreen),
+                      label: const Text('Visualizar'),
+                    ),
+                  ],
                 )
               : null,
         );
@@ -405,12 +535,40 @@ class CameraCard extends StatelessWidget {
                         fontSize: 12,
                       ),
                     ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Modelo: ${camera.deviceModel}',
+                      style: const TextStyle(
+                        color: Colors.white70,
+                        fontSize: 12,
+                      ),
+                    ),
                   ],
                 ),
               ),
 
-              // Indicador de bateria
-              _buildBatteryIndicator(),
+              // Botões de ação
+              Column(
+                children: [
+                  _buildBatteryIndicator(),
+                  const SizedBox(height: 8),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      IconButton(
+                        onPressed: () => _openWebViewer(context, camera.deviceId),
+                        icon: const Icon(Icons.web, color: Colors.blueAccent),
+                        tooltip: 'Abrir no Web',
+                      ),
+                      IconButton(
+                        onPressed: () => _openCameraWindow(context),
+                        icon: const Icon(Icons.fullscreen, color: Colors.green),
+                        tooltip: 'Tela Cheia',
+                      ),
+                    ],
+                  ),
+                ],
+              ),
             ],
           ),
         ),
@@ -464,6 +622,97 @@ class CameraCard extends StatelessWidget {
           initialCameraId: camera.deviceId,
         ),
       ),
+    );
+  }
+
+  void _openWebViewer(BuildContext context, String cameraId) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          backgroundColor: Colors.grey[800],
+          title: const Row(
+            children: [
+              Icon(Icons.web, color: Colors.blueAccent),
+              SizedBox(width: 8),
+              Text(
+                'Visualizar no Navegador',
+                style: TextStyle(color: Colors.white),
+              ),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Câmera: ${camera.deviceName}',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 16),
+              const Text(
+                'Abra o seguinte endereço no seu navegador:',
+                style: TextStyle(color: Colors.white70),
+              ),
+              const SizedBox(height: 8),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.grey[700],
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: SelectableText(
+                  'http://localhost:8080/viewer.html?camera=$cameraId',
+                  style: const TextStyle(
+                    color: Colors.blueAccent,
+                    fontFamily: 'monospace',
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              const Text(
+                'Ou use estes botões para abrir automaticamente:',
+                style: TextStyle(color: Colors.white70),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton.icon(
+              onPressed: () {
+                Navigator.of(context).pop();
+                // Aqui você pode implementar uma função para abrir o navegador padrão
+                // Por exemplo, usando url_launcher
+              },
+              icon: const Icon(Icons.open_in_browser, color: Colors.blueAccent),
+              label: const Text(
+                'Janela Normal',
+                style: TextStyle(color: Colors.blueAccent),
+              ),
+            ),
+            TextButton.icon(
+              onPressed: () {
+                Navigator.of(context).pop();
+                // Implementar abertura em tela cheia
+              },
+              icon: const Icon(Icons.fullscreen, color: Colors.green),
+              label: const Text(
+                'Tela Cheia',
+                style: TextStyle(color: Colors.green),
+              ),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text(
+                'Fechar',
+                style: TextStyle(color: Colors.grey),
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 }
