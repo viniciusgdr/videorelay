@@ -36,7 +36,7 @@ class StreamingConfigManager {
         maxBitrate: prefs.getInt(_keyMaxBitrate) ?? 5000000,
         minBitrate: prefs.getInt(_keyMinBitrate) ?? 3000000,
         audio: prefs.getBool(_keyAudio) ?? false,
-        server: prefs.getString(_keyServer) ?? '192.168.31.202:8080',
+        server: prefs.getString(_keyServer) ?? '192.168.1.2:8080',
         cameraType: prefs.getString(_keyCameraType) ?? 'back',
       );
     } catch (e) {
@@ -80,7 +80,7 @@ class StreamingConfig {
     this.maxBitrate = 8000000,
     this.minBitrate = 5000000,
     this.audio = false,
-    this.server = '192.168.31.202:8080',
+    this.server = '192.168.1.2:8080',
     this.cameraType = 'back',
     this.quality = 'FHD', // 'HD', 'FHD', '4K'
   });
@@ -145,7 +145,7 @@ class StreamingConfig {
           maxBitrate: qualityPresets[quality]?.maxBitrate ?? 8000000,
           minBitrate: qualityPresets[quality]?.minBitrate ?? 5000000,
           quality: quality,
-          server: server ?? '192.168.31.202:8080',
+          server: server ?? '192.168.1.2:8080',
           cameraType: cameraType ?? 'back',
           audio: audio ?? false,
         );

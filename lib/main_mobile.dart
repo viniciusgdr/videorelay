@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:async';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
@@ -178,9 +179,10 @@ class _CameraStreamingPageState extends State<CameraStreamingPage> {
   @override
   void initState() {
     super.initState();
+    // Inicia em modo retrato
     SystemChrome.setPreferredOrientations([
-      DeviceOrientation.landscapeLeft,
-      DeviceOrientation.landscapeRight,
+      DeviceOrientation.portraitUp,
+      DeviceOrientation.portraitDown,
     ]);
     _initializeRenderer();
     _loadConfiguration();
@@ -513,6 +515,12 @@ class _CameraStreamingPageState extends State<CameraStreamingPage> {
       return;
     }
 
+    // Vira para paisagem antes de iniciar a câmera
+    SystemChrome.setPreferredOrientations([
+      DeviceOrientation.landscapeLeft,
+      DeviceOrientation.landscapeRight,
+    ]);
+
     setState(() {
       _isStreaming = true;
       _isConnecting = true;
@@ -533,6 +541,12 @@ class _CameraStreamingPageState extends State<CameraStreamingPage> {
     _peerConnection?.close();
     _localStream?.dispose();
     _channel?.sink.close();
+
+    // Retorna para modo retrato quando parar o streaming
+    SystemChrome.setPreferredOrientations([
+      DeviceOrientation.portraitUp,
+      DeviceOrientation.portraitDown,
+    ]);
 
     setState(() {
       _isStreaming = false;
