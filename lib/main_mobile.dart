@@ -1,11 +1,11 @@
 import 'dart:convert';
 import 'dart:async';
-import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
 import 'src/config/streaming_config.dart';
 import 'src/utils/error_handler.dart';
 import 'src/services/device_info_service.dart';
@@ -515,7 +515,9 @@ class _CameraStreamingPageState extends State<CameraStreamingPage> {
       return;
     }
 
-    // Vira para paisagem antes de iniciar a câmera
+    WakelockPlus.enable();
+    ErrorHandler.logInfo('Wakelock ativado - tela permanecerá ligada durante o streaming');
+
     SystemChrome.setPreferredOrientations([
       DeviceOrientation.landscapeLeft,
       DeviceOrientation.landscapeRight,
@@ -541,6 +543,11 @@ class _CameraStreamingPageState extends State<CameraStreamingPage> {
     _peerConnection?.close();
     _localStream?.dispose();
     _channel?.sink.close();
+
+    // Desativa o wakelock para permitir que a tela desligue normalmente
+    // Isso restaura o comportamento padrão de economia de energia do dispositivo
+    WakelockPlus.disable();
+    ErrorHandler.logInfo('Wakelock desativado - tela pode desligar normalmente');
 
     // Retorna para modo retrato quando parar o streaming
     SystemChrome.setPreferredOrientations([
@@ -611,6 +618,10 @@ class _CameraStreamingPageState extends State<CameraStreamingPage> {
     _batteryMonitor?.dispose();
     _stopStreaming();
     _localRenderer.dispose();
+    
+    // Garante que o wakelock seja desativado ao fechar o app
+    WakelockPlus.disable();
+    
     super.dispose();
   }
 

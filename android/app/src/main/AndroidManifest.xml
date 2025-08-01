@@ -7,7 +7,9 @@
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE" />
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
     <application
+        android:networkSecurityConfig="@xml/network_security_config"
         android:label="streameasy"
         android:name="${applicationName}"
         android:usesCleartextTraffic="true"
